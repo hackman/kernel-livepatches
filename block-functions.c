@@ -7,12 +7,15 @@
  * arming a single ftrace_ops (FTRACE_OPS_FL_IPMODIFY) over all listed
  * symbols and rewriting %rip at the fentry site to point at the stub.
  *
- * ftrace resolves names against whatever is currently loaded
+ * Unlike the livepatch variant, there is no notion of a target object
+ * here: ftrace resolves names against whatever is currently loaded
  * (vmlinux + already-insmod'd modules). Symbols belonging to modules
  * that load LATER are not patched — load this module after them.
  *
  * Requires: CONFIG_DYNAMIC_FTRACE=y, CONFIG_FUNCTION_TRACER=y.
- * Tested against kernels 5.11+ where ftrace_regs is available.
+ * Compatible with kernels back to ~4.x; uses ftrace_regs / ftrace_get_regs()
+ * on >=5.11 and pt_regs directly on older trees (selected at compile time
+ * via LINUX_VERSION_CODE).
  *
  * Stub limitations (same reasoning as livepatch-filter.c):
  *   - Targets must return int or long. -EPERM is placed in %rax,
@@ -34,6 +37,19 @@
 #include <linux/ftrace.h>
 #include <linux/errno.h>
 #include <linux/string.h>
+#include <linux/version.h>
+
+/*
+ * struct ftrace_regs and ftrace_get_regs() were introduced in 5.11.
+ * On older kernels the ftrace callback receives struct pt_regs * directly.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+# define FTRACE_REGS_T          struct ftrace_regs
+# define FTRACE_TO_PT_REGS(r)   ftrace_get_regs(r)
+#else
+# define FTRACE_REGS_T          struct pt_regs
+# define FTRACE_TO_PT_REGS(r)   (r)
+#endif
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Marian Marinov");
@@ -63,9 +79,9 @@ static struct ftrace_ops filter_ops __read_mostly;
 static void notrace filter_thunk(unsigned long ip,
 				 unsigned long parent_ip,
 				 struct ftrace_ops *ops,
-				 struct ftrace_regs *fregs)
+				 FTRACE_REGS_T *fregs)
 {
-	struct pt_regs *regs = ftrace_get_regs(fregs);
+	struct pt_regs *regs = FTRACE_TO_PT_REGS(fregs);
 
 	if (unlikely(!regs))
 		return;
