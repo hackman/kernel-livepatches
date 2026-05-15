@@ -1,4 +1,4 @@
-obj-m := block-functions.o livepatch-filter.o
+obj-m := filter-functions-ftrace.o filter-functions-livepatch.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)
@@ -15,13 +15,13 @@ clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 
 load-ftrace: all
-	sudo insmod block-functions.ko
+	sudo insmod filter-functions-ftrace.ko
 
 unload-ftrace:
 	sudo rmmod $(FT_MOD)
 
 load-livepatch: all
-	sudo insmod livepatch-filter.ko
+	sudo insmod filter-functions-livepatch.ko
 
 unload-livepatch:
 	echo 0 | sudo tee /sys/kernel/livepatch/$(LP_MOD)/enabled

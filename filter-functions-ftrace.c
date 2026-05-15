@@ -17,7 +17,7 @@
  * on >=5.11 and pt_regs directly on older trees (selected at compile time
  * via LINUX_VERSION_CODE).
  *
- * Stub limitations (same reasoning as livepatch-filter.c):
+ * Stub limitations (same reasoning as filter-functions-livepatch.c):
  *   - Targets must return int or long. -EPERM is placed in %rax,
  *     fully sign-extended.
  *   - Targets returning pointers, structs by value, or floats are NOT

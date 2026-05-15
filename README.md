@@ -10,8 +10,8 @@ The same blocklist concept is implemented two ways:
 
 | File | Mechanism | When to prefer |
 |---|---|---|
-| `block-functions.c` | dynamic ftrace + `FTRACE_OPS_FL_IPMODIFY` | quick, no special kernel config beyond `DYNAMIC_FTRACE` |
-| `livepatch-filter.c` | kernel livepatching (`klp_enable_patch`) | safer transition semantics, patches modules loaded later, requires `CONFIG_LIVEPATCH=y` |
+| `filter-functions-ftrace.c` | dynamic ftrace + `FTRACE_OPS_FL_IPMODIFY` | quick, no special kernel config beyond `DYNAMIC_FTRACE` |
+| `filter-functions-livepatch.c` | kernel livepatching (`klp_enable_patch`) | safer transition semantics, patches modules loaded later, requires `CONFIG_LIVEPATCH=y` |
 
 Both load the same kind of stub: a single `eperm_stub` shared across all
 listed functions, which returns `-EPERM` regardless of the caller's
@@ -24,11 +24,11 @@ Common:
 - Kernel headers / build tree at `/lib/modules/$(uname -r)/build`
 - Kernel 5.11 or newer (for the `ftrace_regs` API used by both modules)
 
-ftrace module (`block-functions.c`):
+ftrace module (`filter-functions-ftrace.c`):
 - `CONFIG_DYNAMIC_FTRACE=y`
 - `CONFIG_FUNCTION_TRACER=y`
 
-Livepatch module (`livepatch-filter.c`):
+Livepatch module (`filter-functions-livepatch.c`):
 - `CONFIG_LIVEPATCH=y` (implies `DYNAMIC_FTRACE_WITH_REGS=y` and
   `HAVE_RELIABLE_STACKTRACE=y`)
 
@@ -37,7 +37,7 @@ of these enabled.
 
 ## Configuring the blocklist
 
-### ftrace version — `block-functions.c`
+### ftrace version — `filter-functions-ftrace.c`
 
 Edit the array near the top of the file. Each entry is a symbol name as
 it appears in `/proc/kallsyms`:
@@ -53,7 +53,7 @@ ftrace resolves names against whatever is currently loaded (vmlinux plus
 already-`insmod`'d modules). Symbols that belong to modules loaded
 *after* this one are not patched.
 
-### Livepatch version — `livepatch-filter.c`
+### Livepatch version — `filter-functions-livepatch.c`
 
 Edit the array near the top of the file. Each entry is `{module_name,
 function_name}`. `module_name == NULL` means the symbol lives in
@@ -77,19 +77,19 @@ already loaded or not.
 make
 ```
 
-Produces `block-functions.ko` and `livepatch-filter.ko`. Override the
+Produces `filter-functions-ftrace.ko` and `filter-functions-livepatch.ko`. Override the
 target kernel with `KDIR=/path/to/build` if needed.
 
 ## Load / unload
 
 The Makefile has convenience targets. The kernel normalizes `-` to `_`
-in module names, so `block-functions.ko` registers as `block_functions`
-and `livepatch-filter.ko` as `livepatch_filter`.
+in module names, so `filter-functions-ftrace.ko` registers as `block_functions`
+and `filter-functions-livepatch.ko` as `livepatch_filter`.
 
 ### ftrace
 
 ```sh
-make load-ftrace      # insmod block-functions.ko
+make load-ftrace      # insmod filter-functions-ftrace.ko
 make unload-ftrace    # rmmod block_functions
 ```
 
@@ -98,7 +98,7 @@ Removal is immediate.
 ### Livepatch
 
 ```sh
-make load-livepatch   # insmod livepatch-filter.ko
+make load-livepatch   # insmod filter-functions-livepatch.ko
 make unload-livepatch # disable via sysfs, wait for transition, rmmod
 ```
 
@@ -145,7 +145,7 @@ Supported target signatures: anything returning `int`, `long`,
 Both modules ultimately install an `FTRACE_OPS_FL_IPMODIFY` hook on
 their target symbols, and only one such hook per function is allowed.
 If you have an active livepatch on `af_alg_sendmsg` and then try to
-load `block-functions.ko` with `af_alg_sendmsg` in its blocklist,
+load `filter-functions-ftrace.ko` with `af_alg_sendmsg` in its blocklist,
 `register_ftrace_function()` will fail with `-EBUSY`. Pick one
 mechanism per symbol.
 
@@ -158,8 +158,8 @@ name to `/etc/modules-load.d/`.
 ## Files
 
 ```
-block-functions.c    ftrace-based blocker, edit blocklist[] at top
-livepatch-filter.c   livepatch-based blocker, edit blocklist[] at top
+filter-functions-ftrace.c    ftrace-based blocker, edit blocklist[] at top
+filter-functions-livepatch.c   livepatch-based blocker, edit blocklist[] at top
 Makefile             kbuild + load/unload helpers
 README.md            this file
 ```
