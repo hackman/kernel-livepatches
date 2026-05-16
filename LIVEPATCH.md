@@ -426,7 +426,7 @@ Turn logging on, generate a connection:
 $ echo 1 | sudo tee /sys/kernel/tcp_connect_logger/enabled
 $ curl -s http://example.com >/dev/null
 $ dmesg | tail -1
-[ 1130.045] tcp_connect_logger: pid=8421 comm=curl -> 93.184.216.34:80
+[ 1130.045] tcp_connect_logger: pid=8421 uid=1053 comm=curl -> 93.184.216.34:80
 ```
 
 Turn it back off:
