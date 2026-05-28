@@ -15,6 +15,7 @@ not-yet-loaded modules).
 | `filter-functions-livepatch.c` | livepatching | same, but via livepatch |
 | `ptrace-fix-ftrace.c` | dynamic ftrace + `IPMODIFY` | targeted: mitigate the ptrace-after-exit_mm bypass (upstream commit `31e62c2ebbfd`, "ssh-keysign" chain) |
 | `ptrace-fix-livepatch.c` | livepatching | same mitigation, via livepatch |
+| `loadavg-lxd-livepatch.c` | livepatching | targeted: replacing the 64bit sysinfo call |
 
 The generic blockers (`filter-functions-ftrace.c` / `filter-functions-livepatch.c`) share a
 single `eperm_stub` that returns `-EPERM` regardless of arguments. The
@@ -225,6 +226,7 @@ ptrace-fix-ftrace.c           mitigation for CVE-2026-46333 via ftrace
 ptrace-fix-livepatch.c        mitigation for CVE-2026-46333 via livepatch
 tcp-connect-logger.c          kernel TCP connection logger livepatch
 udp-send-logger.c             kernel UDP "connection" logger livepatch
+loadavg-lxd-livepatch.c       sysinfo syscall livepatch for LXD containers
 Makefile                      kbuild + load/unload helpers
 ```
 
