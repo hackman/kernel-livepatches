@@ -1,6 +1,7 @@
 obj-m := filter-functions-ftrace.o filter-functions-livepatch.o \
          ptrace-fix-ftrace.o ptrace-fix-livepatch.o \
-         tcp-connect-logger.o udp-send-logger.o
+         tcp-connect-logger.o udp-send-logger.o \
+		 loadavg-lxd-livepatch.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)
@@ -13,6 +14,7 @@ PTRACE_FT_MOD   := ptrace_fix_ftrace
 PTRACE_LP_MOD   := ptrace_fix_livepatch
 TCL_MOD         := tcp_connect_logger
 USL_MOD         := udp_send_logger
+LP_LXD          := loadavg_lxd_livepatch
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
@@ -71,6 +73,18 @@ unload-udp-logger:
 	@echo "Waiting for livepatch transition to complete..."
 	@while [ "$$(cat /sys/kernel/livepatch/$(USL_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
 	sudo rmmod $(USL_MOD)
+
+
+# --- sysinfo loadavg patch -------------------------------------------
+load-loadavg-lxd-livepatch: all
+	sudo insmod loadavg-lxd-livepatch.ko
+
+unload-loadavg-lxd-livepatch:
+	echo 0 | sudo tee /sys/kernel/livepatch/$(LP_LXD)/enabled
+	@echo "Waiting for livepatch transition to complete..."
+	@while [ "$$(cat /sys/kernel/livepatch/$(LP_LXD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
+	sudo rmmod $(LP_LXD)
+
 
 .PHONY: all clean \
         load-ftrace unload-ftrace \
