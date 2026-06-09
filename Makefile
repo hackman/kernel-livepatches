@@ -1,7 +1,7 @@
 obj-m := filter-functions-ftrace.o filter-functions-livepatch.o \
          ptrace-fix-ftrace.o ptrace-fix-livepatch.o \
          tcp-connect-logger.o udp-send-logger.o \
-		 loadavg-lxd-livepatch.o
+		 loadavg-lxd-livepatch.o nft-catchall-fix-livepatch.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)
@@ -15,6 +15,7 @@ PTRACE_LP_MOD   := ptrace_fix_livepatch
 TCL_MOD         := tcp_connect_logger
 USL_MOD         := udp_send_logger
 LP_LXD          := loadavg_lxd_livepatch
+NFT_LP_MOD      := nft_catchall_fix_livepatch
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
@@ -84,6 +85,16 @@ unload-loadavg-lxd-livepatch:
 	@echo "Waiting for livepatch transition to complete..."
 	@while [ "$$(cat /sys/kernel/livepatch/$(LP_LXD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
 	sudo rmmod $(LP_LXD)
+
+# --- CVE-2026-23111 nft_map_catchall_activate UAF fix ----------------
+load-nft-fix: all
+	sudo insmod nft-catchall-fix-livepatch.ko
+
+unload-nft-fix:
+	echo 0 | sudo tee /sys/kernel/livepatch/$(NFT_LP_MOD)/enabled
+	@echo "Waiting for livepatch transition to complete..."
+	@while [ "$$(cat /sys/kernel/livepatch/$(NFT_LP_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
+
 
 
 .PHONY: all clean \
