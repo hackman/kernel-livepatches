@@ -69,10 +69,43 @@
 #include <linux/kernel.h>
 #include <linux/livepatch.h>
 #include <linux/list.h>
+#include <linux/rcupdate.h>
 #include <linux/kallsyms.h>
 #include <linux/version.h>
 #include <linux/errno.h>
 #include <net/netfilter/nf_tables.h>
+
+/*
+ * struct nft_set_elem_catchall is declared *inside* net/netfilter/
+ * nf_tables_api.c, not in any public header, so we redeclare it here
+ * with the same field layout the target kernel uses. The list-head
+ * macros need exact offsets to land container_of() in the right place.
+ *
+ * v6.7 commit 0e1ea651c9d9 ("netfilter: nf_tables: shrink memory
+ * consumption of set elements") replaced the old `void *elem;` field
+ * with `struct nft_elem_priv *elem;` and re-typed the helpers that
+ * consume it (nft_setelem_data_activate, nft_set_elem_ext) to match.
+ * The on-wire layout (pointer-sized field at the same offset) is
+ * identical, so list-iteration arithmetic is the same on both sides,
+ * but we keep the typed declaration so calls type-check cleanly.
+ *
+ * Covers 6.x kernels including the 6.8 and 6.12 targets in this repo.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
+struct nft_set_elem_catchall {
+	struct list_head	 list;
+	struct rcu_head		 rcu;
+	struct nft_elem_priv	*elem;
+};
+typedef struct nft_elem_priv	*nft_elem_t;
+#else
+struct nft_set_elem_catchall {
+	struct list_head	 list;
+	struct rcu_head		 rcu;
+	void			*elem;
+};
+typedef void			*nft_elem_t;
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
 # include <linux/kprobes.h>
@@ -86,7 +119,7 @@ MODULE_INFO(livepatch, "Y");
 
 static void (*nft_setelem_data_activate_fn)(const struct net *net,
 					    const struct nft_set *set,
-					    struct nft_elem_priv *elem_priv);
+					    nft_elem_t elem_priv);
 
 typedef unsigned long (*kln_t)(const char *);
 
