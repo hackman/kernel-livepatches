@@ -1,7 +1,8 @@
 obj-m := filter-functions-ftrace.o filter-functions-livepatch.o \
          ptrace-fix-ftrace.o ptrace-fix-livepatch.o \
          tcp-connect-logger.o udp-send-logger.o \
-		 loadavg-lxd-livepatch.o nft-catchall-fix-livepatch.o
+		 loadavg-lxd-livepatch.o nft-catchall-fix-livepatch.o \
+		 badepoll-livepatch.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)
@@ -16,6 +17,7 @@ TCL_MOD         := tcp_connect_logger
 USL_MOD         := udp_send_logger
 LP_LXD          := loadavg_lxd_livepatch
 NFT_LP_MOD      := nft_catchall_fix_livepatch
+BADEPOLL_LP_MOD	:= badepoll_livepatch
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
@@ -95,6 +97,15 @@ unload-nft-fix:
 	@echo "Waiting for livepatch transition to complete..."
 	@while [ "$$(cat /sys/kernel/livepatch/$(NFT_LP_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
 
+# --- CVE-2026-46242 ep_remove fix ----------------
+load-badepoll-fix: all
+	sudo insmod badepoll-livepatch.ko
+
+unload-badepoll-fix:
+	echo 0 | sudo tee /sys/kernel/livepatch/$(BADEPOLL_LP_MOD)/enabled
+	@echo "Waiting for livepatch transition to complete..."
+	@while [ "$$(cat /sys/kernel/livepatch/$(BADEPOLL_LP_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
+	sudo rmmod $(BADEPOLL_LP_MOD)
 
 
 .PHONY: all clean \
