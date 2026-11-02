@@ -2,6 +2,7 @@ obj-m := filter-functions-ftrace.o filter-functions-livepatch.o \
          ptrace-fix-ftrace.o ptrace-fix-livepatch.o \
          tcp-connect-logger.o udp-send-logger.o \
 		 loadavg-lxd-livepatch.o nft-catchall-fix-livepatch.o \
+		 cve-2026-98432-livepatch-6.8.o cve-2026-98432-livepatch-6.12.o
 		 badepoll-livepatch.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
@@ -18,6 +19,8 @@ USL_MOD         := udp_send_logger
 LP_LXD          := loadavg_lxd_livepatch
 NFT_LP_MOD      := nft_catchall_fix_livepatch
 BADEPOLL_LP_MOD	:= badepoll_livepatch
+CVE_98432_6_8_MOD   := cve_2026_98432_livepatch_6_8
+CVE_98432_6_12_MOD  := cve_2026_98432_livepatch_6_1
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
@@ -87,6 +90,27 @@ unload-loadavg-lxd-livepatch:
 	@echo "Waiting for livepatch transition to complete..."
 	@while [ "$$(cat /sys/kernel/livepatch/$(LP_LXD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
 	sudo rmmod $(LP_LXD)
+
+# --- CVE-2026-98432 ipv4 inet_opt/ireq_opt UAF fix -------------------
+# Upstream: commit e3f33b0a1d89 (kfree -> kfree_rcu in inet_sock_destruct
+# and tcp_v4_reqsk_destructor). Pick the variant matching your kernel.
+load-cve-98432-6.8: all
+	sudo insmod cve-2026-98432-livepatch-6.8.ko
+
+unload-cve-98432-6.8:
+	echo 0 | sudo tee /sys/kernel/livepatch/$(CVE_98432_6_8_MOD)/enabled
+	@echo "Waiting for livepatch transition to complete..."
+	@while [ "$$(cat /sys/kernel/livepatch/$(CVE_98432_6_8_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
+	sudo rmmod $(CVE_98432_6_8_MOD)
+
+load-cve-98432-6.12: all
+	sudo insmod cve-2026-98432-livepatch-6.12.ko
+
+unload-cve-98432-6.12:
+	echo 0 | sudo tee /sys/kernel/livepatch/$(CVE_98432_6_12_MOD)/enabled
+	@echo "Waiting for livepatch transition to complete..."
+	@while [ "$$(cat /sys/kernel/livepatch/$(CVE_98432_6_12_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
+	sudo rmmod $(CVE_98432_6_12_MOD)
 
 # --- CVE-2026-23111 nft_map_catchall_activate UAF fix ----------------
 load-nft-fix: all
