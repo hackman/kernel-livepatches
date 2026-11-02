@@ -2,8 +2,8 @@ obj-m := filter-functions-ftrace.o filter-functions-livepatch.o \
          ptrace-fix-ftrace.o ptrace-fix-livepatch.o \
          tcp-connect-logger.o udp-send-logger.o \
 		 loadavg-lxd-livepatch.o nft-catchall-fix-livepatch.o \
-		 cve-2026-98432-livepatch-6.8.o cve-2026-98432-livepatch-6.12.o
-		 badepoll-livepatch.o
+		 cve-2026-98432-livepatch-6.8.o cve-2026-98432-livepatch-6.12.o \
+#		 badepoll-livepatch.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)
