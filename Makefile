@@ -1,8 +1,24 @@
+# CVE-2026-99288 has genuinely different APIs on 5.x vs 6.x
+# (INET_MATCH macro vs inet_match inline, tsoff arg in
+# tcp_get_cookie_sock, ...). Pick the variant matching the target tree
+# so a plain `make` only builds the one that compiles here. In the
+# kbuild pass $(VERSION) is the running kernel's major version; in the
+# outer `make` pass it is empty and the value below is unused (the
+# outer pass only recurses into kbuild). Must be set BEFORE obj-m since
+# obj-m is expanded immediately (:=).
+ifeq ($(VERSION),5)
+CVE_99288_OBJ := cve-2026-99288-livepatch-5.x.o
+else
+CVE_99288_OBJ := cve-2026-99288-livepatch-6.x.o
+endif
+
+
 obj-m := filter-functions-ftrace.o filter-functions-livepatch.o \
          ptrace-fix-ftrace.o ptrace-fix-livepatch.o \
          tcp-connect-logger.o udp-send-logger.o \
 		 loadavg-lxd-livepatch.o nft-catchall-fix-livepatch.o \
 		 cve-2026-98432-livepatch-6.8.o cve-2026-98432-livepatch-6.12.o \
+		 $(CVE_99288_OBJ)
 #		 badepoll-livepatch.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
@@ -21,6 +37,9 @@ NFT_LP_MOD      := nft_catchall_fix_livepatch
 BADEPOLL_LP_MOD	:= badepoll_livepatch
 CVE_98432_6_8_MOD   := cve_2026_98432_livepatch_6_8
 CVE_98432_6_12_MOD  := cve_2026_98432_livepatch_6_1
+CVE_99288_6_X_MOD   := cve_2026_99288_livepatch_6_x
+CVE_99288_5_X_MOD   := cve_2026_99288_livepatch_5_x
+
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
@@ -131,6 +150,29 @@ unload-badepoll-fix:
 	@while [ "$$(cat /sys/kernel/livepatch/$(BADEPOLL_LP_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
 	sudo rmmod $(BADEPOLL_LP_MOD)
 
+# --- CVE-2026-99288 unhashed-socket established-lookup UAF fix --------
+# Upstream: commit 4e2b3ef19e0e ("inet: reject unhashed sockets during
+# established lookups"). Add an unhashed-node guard to the IPv4/IPv6
+# established ehash lookups and defer the SYN-cookie reqsk free. The
+# Makefile auto-selects the 5.x or 6.x source for the running kernel.
+load-cve-99288-6.x: all
+	sudo insmod cve-2026-99288-livepatch-6.x.ko
+
+unload-cve-99288-6.x:
+	echo 0 | sudo tee /sys/kernel/livepatch/$(CVE_99288_6_X_MOD)/enabled
+	@echo "Waiting for livepatch transition to complete..."
+	@while [ "$$(cat /sys/kernel/livepatch/$(CVE_99288_6_X_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
+	sudo rmmod $(CVE_99288_6_X_MOD)
+
+load-cve-99288-5.x: all
+	sudo insmod cve-2026-99288-livepatch-5.x.ko
+
+unload-cve-99288-5.x:
+	echo 0 | sudo tee /sys/kernel/livepatch/$(CVE_99288_5_X_MOD)/enabled
+	@echo "Waiting for livepatch transition to complete..."
+	@while [ "$$(cat /sys/kernel/livepatch/$(CVE_99288_5_X_MOD)/transition 2>/dev/null)" = "1" ]; do sleep 1; done
+	sudo rmmod $(CVE_99288_5_X_MOD)
+
 
 .PHONY: all clean \
         load-ftrace unload-ftrace \
@@ -138,4 +180,6 @@ unload-badepoll-fix:
         load-ptrace-ftrace unload-ptrace-ftrace \
         load-ptrace-livepatch unload-ptrace-livepatch \
         load-tcp-logger unload-tcp-logger \
-        load-udp-logger unload-udp-logger
+        load-udp-logger unload-udp-logger \
+        load-cve-99288-6.x unload-cve-99288-6.x \
+        load-cve-99288-5.x unload-cve-99288-5.x
