@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Livepatching Guide // Zathras</title>
+<meta name="description" content="A practical guide to Linux kernel livepatching and a step-by-step tutorial, part of the Zathras toolkit.">
+<link rel="stylesheet" href="assets/matrix.css">
+</head>
+<body>
+<canvas id="matrix-rain"></canvas>
+
+<header class="site">
+	<div class="wrap">
+		<a class="brand" href="index.html">Zathras<span class="blink">_</span>
+			<span class="sub">// LIVEPATCHING GUIDE</span></a>
+		<nav class="main">
+			<a href="index.html">Overview</a>
+			<a href="modules.html">Modules</a>
+			<a href="livepatch.html" class="active">Livepatching Guide</a>
+			<a class="gh" href="https://github.com/hackman/kernel-livepatches" target="_blank" rel="noopener" title="GitHub repository"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+		</nav>
+	</div>
+</header>
+
+<main>
+	<div class="wrap">
+		<div class="toc">
+			<strong>// contents</strong>
+			<ol>
+				<li><a href="#1-what-livepatching-is">1. What livepatching is</a></li>
+				<li><a href="#2-the-tutorial-a-tcp-connect-logger">2. The tutorial: a TCP-connect logger</a></li>
+				<li><a href="#3-caveats-and-common-pitfalls">3. Caveats and common pitfalls</a></li>
+				<li><a href="#4-further-reading">4. Further reading</a></li>
+			</ol>
+		</div>
+		<article class="md">
+<h1 id="linux-kernel-livepatching">Linux Kernel Livepatching</h1>
+<p>A practical guide to <code>kernel/livepatch/</code> and a step-by-step tutorial: wrap <code>tcp_v4_connect()</code> with a sysfs-toggled connection logger, without rebooting or recompiling the kernel.</p>
+<p>The complete example module is in <a href="tcp-connect-logger.c"><code>tcp-connect-logger.c</code></a>; this document walks through it section by section.</p>
+<hr>
+<h2 id="1-what-livepatching-is">1. What livepatching is</h2>
+<p>Livepatching lets a kernel module replace a function in the running kernel — without rebooting, without unloading the original code, and without stopping the workload. The original use case was applying security CVEs to long-uptime servers; the same mechanism is equally useful for in-place instrumentation, debugging, and back-porting fixes.</p>
+<p>The infrastructure lives in <code>kernel/livepatch/</code> and is enabled with <code>CONFIG_LIVEPATCH=y</code>. On x86_64 it also implies <code>CONFIG_DYNAMIC_FTRACE_WITH_REGS=y</code> and <code>CONFIG_HAVE_RELIABLE_STACKTRACE=y</code>. Distros that ship with kpatch (RHEL, SUSE) all have it on.</p>
+<h3 id="how-it-works-under-the-hood">How it works under the hood</h3>
+<p>Three things you should know:</p>
+<ol>
+<li><strong>It rides on ftrace.</strong> Each patched function gets an</li>
+</ol>
+<p>   <code>FTRACE_OPS_FL_IPMODIFY</code> hook installed at its fentry NOP. When the    function is called, the trampoline rewrites <code>%rip</code> to point at your    replacement. The original code is never deleted; it just stops being    reached.</p>
+<ol>
+<li><strong>Only one IPMODIFY hook per function.</strong> Two livepatches, or a</li>
+</ol>
+<p>   livepatch plus an ftrace IPMODIFY user, cannot target the same    function simultaneously. The second one fails with <code>-EBUSY</code>.</p>
+<ol>
+<li><strong>Per-task consistency model.</strong> Switching from "old function" to</li>
+</ol>
+<p>   "new function" is not instantaneous. The kernel migrates each task    only when it's safe — when that task's stack does not contain a    frame belonging to the patched function. Until every task has    migrated, the patch is "in transition" and both versions of the    function are reachable (different callers see different versions).    This is what <code>/sys/kernel/livepatch/&lt;name&gt;/transition</code> reflects:    <code>1</code> while migrating, <code>0</code> when complete.</p>
+<h3 id="the-data-model">The data model</h3>
+<p>A livepatch module declares three nested structures:</p>
+<pre><code>struct klp_patch
+   .mod   = THIS_MODULE
+   .objs  -&gt; array of klp_object, NULL-terminated
+                 .name  = "module_name" or NULL for vmlinux
+                 .funcs -&gt; array of klp_func, NULL-terminated
+                              .old_name = "function_to_patch"
+                              .new_func = pointer_to_replacement</code></pre>
+<p>You hand the top-level <code>struct klp_patch</code> to <code>klp_enable_patch()</code> (or <code>klp_register_patch()</code> + <code>klp_enable_patch()</code> on kernels &lt; 5.1). The livepatch core resolves each <code>old_name</code> via kallsyms, arms ftrace, and starts the per-task transition.</p>
+<h3 id="lifecycle-and-the-sysfs-interface">Lifecycle and the sysfs interface</h3>
+<p>After a successful <code>klp_enable_patch()</code>, the patch shows up at:</p>
+<pre><code>/sys/kernel/livepatch/&lt;modname&gt;/
+├── enabled            # 1 = patch active, 0 = inactive
+├── transition         # 1 = migration in progress, 0 = settled
+├── force              # write 1 to force-finish a stuck transition (taints)
+└── &lt;object&gt;/
+    └── &lt;function&gt;/
+        ├── patched
+        └── sympos</code></pre>
+<p>To remove a livepatch module you must:</p>
+<ol>
+<li>Write <code>0</code> to <code>enabled</code>.</li>
+<li>Poll <code>transition</code> until it reads <code>0</code>.</li>
+<li><code>rmmod</code> the module.</li>
+</ol>
+<p>The module's own <code>module_exit</code> cannot disable the patch — by design, since you might still have tasks executing inside the replacement.</p>
+<h3 id="requirements-at-a-glance">Requirements at a glance</h3>
+<table><thead><tr>
+<th>Requirement</th>
+<th>Reason</th>
+</tr></thead><tbody>
+<tr><td><code>CONFIG_LIVEPATCH=y</code></td><td>the infrastructure itself</td></tr>
+<tr><td><code>CONFIG_KALLSYMS_ALL=y</code></td><td>symbol resolution for <code>klp_func.old_name</code></td></tr>
+<tr><td><code>CONFIG_DYNAMIC_FTRACE_WITH_REGS=y</code></td><td>underlying redirect mechanism</td></tr>
+<tr><td><code>CONFIG_HAVE_RELIABLE_STACKTRACE=y</code></td><td>per-task consistency model</td></tr>
+<tr><td><code>MODULE_LICENSE("GPL")</code></td><td><code>klp_enable_patch</code> is <code>EXPORT_SYMBOL_GPL</code></td></tr>
+<tr><td><code>MODULE_INFO(livepatch, "Y")</code></td><td>tells the loader this is a livepatch module</td></tr>
+</tbody></table>
+<hr>
+<h2 id="2-the-tutorial-a-tcp-connect-logger">2. The tutorial: a TCP-connect logger</h2>
+<p><strong>Goal</strong>: every time a userspace program calls <code>connect()</code> over an IPv4 TCP socket, log the destination address, port, and the calling process to dmesg — but only when explicitly enabled.</p>
+<p><strong>Target function</strong>: <code>tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)</code> in <code>net/ipv4/tcp_ipv4.c</code>. It runs once per outbound IPv4 TCP connection attempt, with the destination address already copied from userspace. Low volume, useful data, returns <code>int</code>. Resides in vmlinux on any non-pathological build.</p>
+<p><strong>Control</strong>: a single boolean at <code>/sys/kernel/tcp_connect_logger/enabled</code>, default <code>0</code>.</p>
+<p>The pieces:</p>
+<pre><code>1. Resolve the original tcp_v4_connect address (livepatch replaces
+   the function but our wrapper still needs to call it).
+2. Define a replacement that conditionally logs, then calls the original.
+3. Wire that replacement into klp_patch / klp_object / klp_func.
+4. Expose a sysfs toggle.
+5. klp_enable_patch().</code></pre>
+<h3 id="21-headers">2.1 Headers</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/livepatch.h&gt;     /* klp_patch / klp_object / klp_func */
+#include &lt;linux/kallsyms.h&gt;      /* kallsyms_lookup_name on &lt;5.7 */
+#include &lt;linux/kobject.h&gt;       /* sysfs kobject */
+#include &lt;linux/sysfs.h&gt;         /* sysfs_create_group */
+#include &lt;linux/version.h&gt;
+#include &lt;linux/in.h&gt;            /* sockaddr_in */
+#include &lt;linux/sched.h&gt;         /* current */
+#include &lt;net/sock.h&gt;            /* struct sock */</code></pre>
+<h3 id="22-resolving-the-original-function">2.2 Resolving the original function</h3>
+<p>Livepatch will install our replacement <em>in place of</em> <code>tcp_v4_connect</code> — which means a naked call to <code>tcp_v4_connect</code> from inside our replacement would call <strong>us</strong>, looping. We need to call the <em>original</em> code. Livepatch doesn't expose an "original pointer" by design, so we resolve it ourselves via kallsyms.</p>
+<p>The mechanics differ by kernel version:</p>
+<ul>
+<li><strong>&lt; 5.7</strong>: <code>kallsyms_lookup_name()</code> is exported. Just call it.</li>
+<li><strong>&gt;= 5.7</strong>: the export was removed. Use a kprobe to obtain the function's</li>
+</ul>
+<p>  address from kallsyms.</p>
+<pre><code>#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(5, 7, 0)
+# include &lt;linux/kprobes.h&gt;
+# define NEED_KPROBE_FALLBACK 1
+#endif
+
+typedef unsigned long (*kln_t)(const char *);
+
+static kln_t resolve_kln(void)
+{
+#ifdef NEED_KPROBE_FALLBACK
+    struct kprobe kp = { .symbol_name = "kallsyms_lookup_name" };
+    kln_t fn;
+    int ret = register_kprobe(&amp;kp);
+    if (ret &lt; 0) return NULL;
+    fn = (kln_t)kp.addr;
+    unregister_kprobe(&amp;kp);
+    return fn;
+#else
+    return (kln_t)kallsyms_lookup_name;
+#endif
+}</code></pre>
+<p>The kprobe trick works because kprobes <em>also</em> uses kallsyms internally to resolve <code>symbol_name</code>, so registering a probe gives us the resolved address as a side effect.</p>
+<h3 id="23-the-original-function-pointer-and-the-toggle">2.3 The original-function pointer and the toggle</h3>
+<pre><code>static int (*orig_tcp_v4_connect)(struct sock *sk,
+                                  struct sockaddr *uaddr,
+                                  int addr_len);
+
+static int logging_enabled;     /* default 0 */</code></pre>
+<p>A plain <code>int</code> with <code>READ_ONCE</code>/<code>WRITE_ONCE</code> on both sides is fine for a single boolean. <code>atomic_t</code> would work too but adds nothing here.</p>
+<h3 id="24-the-replacement-function">2.4 The replacement function</h3>
+<p>The replacement must have <strong>exactly</strong> the original signature, including the return type. Livepatch installs your function at the original's fentry site and the caller jumps to it expecting that calling convention; mismatches corrupt the stack.</p>
+<pre><code>static int patched_tcp_v4_connect(struct sock *sk,
+                                  struct sockaddr *uaddr,
+                                  int addr_len)
+{
+    if (READ_ONCE(logging_enabled) &amp;&amp; uaddr &amp;&amp;
+        addr_len &gt;= (int)sizeof(struct sockaddr_in)) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)uaddr;
+        if (sin-&gt;sin_family == AF_INET) {
+            pr_info("tcp_connect_logger: pid=%d uid=%u comm=%s -&gt; %pI4:%u\n",
+                    current-&gt;pid,
+                    from_kuid(&amp;init_user_ns, current_uid()),
+                    current-&gt;comm,
+                    &amp;sin-&gt;sin_addr, ntohs(sin-&gt;sin_port));
+        }
+    }
+    return orig_tcp_v4_connect(sk, uaddr, addr_len);
+}</code></pre>
+<p>Notes:</p>
+<ul>
+<li>The <code>uaddr</code> was already copied from userspace by <code>__sys_connect()</code></li>
+</ul>
+<p>  before TCP sees it, so it's safe to dereference here.</p>
+<ul>
+<li><code>%pI4</code> is <code>printk</code>'s IPv4 format specifier — give it the address of</li>
+</ul>
+<p>  the <code>__be32</code> and it prints <code>1.2.3.4</code>.</p>
+<ul>
+<li>We always delegate to <code>orig_tcp_v4_connect</code>. Even when logging is on,</li>
+</ul>
+<p>  we just observe; we don't alter behavior.</p>
+<h3 id="25-livepatch-wiring">2.5 Livepatch wiring</h3>
+<pre><code>static struct klp_func funcs[] = {
+    {
+        .old_name = "tcp_v4_connect",
+        .new_func = patched_tcp_v4_connect,
+    },
+    { }     /* terminator */
+};
+
+static struct klp_object objs[] = {
+    { .funcs = funcs },     /* .name = NULL -&gt; vmlinux */
+    { }                     /* terminator */
+};
+
+static struct klp_patch patch = {
+    .mod  = THIS_MODULE,
+    .objs = objs,
+};</code></pre>
+<p>These structures are not const — livepatch writes back into them (transition state, internal bookkeeping). Keep them static at file scope.</p>
+<p>The <code>.name = NULL</code> in <code>objs[0]</code> means "the symbol lives in vmlinux." If you were patching a function in a loadable module (e.g. <code>nf_conntrack</code>), you'd set <code>.name = "nf_conntrack"</code>. Livepatch supports patching not-yet-loaded modules: when the named module loads later, the patch is applied to it then.</p>
+<h3 id="26-sysfs-control">2.6 Sysfs control</h3>
+<p>We create a kobject under <code>/sys/kernel/</code> and expose one read/write attribute:</p>
+<pre><code>static ssize_t enabled_show(struct kobject *kobj,
+                            struct kobj_attribute *attr, char *buf)
+{
+    return sysfs_emit(buf, "%d\n", READ_ONCE(logging_enabled));
+}
+
+static ssize_t enabled_store(struct kobject *kobj,
+                             struct kobj_attribute *attr,
+                             const char *buf, size_t count)
+{
+    int v, err;
+    err = kstrtoint(buf, 10, &amp;v);
+    if (err) return err;
+    WRITE_ONCE(logging_enabled, !!v);
+    return count;
+}
+
+static struct kobj_attribute enabled_attr =
+    __ATTR(enabled, 0644, enabled_show, enabled_store);
+
+static struct attribute *tcl_attrs[] = { &amp;enabled_attr.attr, NULL };
+static const struct attribute_group tcl_group = { .attrs = tcl_attrs };
+static struct kobject *tcl_kobj;</code></pre>
+<p>The mode <code>0644</code> means owner can write, others can read. If you want only root to be able to toggle, use <code>0600</code>.</p>
+<p>Registration at init time:</p>
+<pre><code>tcl_kobj = kobject_create_and_add("tcp_connect_logger", kernel_kobj);
+if (!tcl_kobj) return -ENOMEM;
+ret = sysfs_create_group(tcl_kobj, &amp;tcl_group);</code></pre>
+<p>The path becomes <code>/sys/kernel/tcp_connect_logger/enabled</code>. <code>kernel_kobj</code> is the kobject backing <code>/sys/kernel/</code>; passing <code>NULL</code> as the parent would put it directly under <code>/sys/</code>, which the kernel discourages.</p>
+<h3 id="27-init-and-exit">2.7 Init and exit</h3>
+<pre><code>static int __init tcl_init(void)
+{
+    kln_t kln;
+    unsigned long addr;
+    int ret;
+
+    /* (1) Resolve the original function. */
+    kln = resolve_kln();
+    if (!kln) return -ENOENT;
+    addr = kln("tcp_v4_connect");
+    if (!addr) return -ENOENT;
+    orig_tcp_v4_connect = (typeof(orig_tcp_v4_connect))addr;
+
+    /* (2) Set up sysfs. */
+    tcl_kobj = kobject_create_and_add("tcp_connect_logger", kernel_kobj);
+    if (!tcl_kobj) return -ENOMEM;
+    ret = sysfs_create_group(tcl_kobj, &amp;tcl_group);
+    if (ret) {
+        kobject_put(tcl_kobj);
+        return ret;
+    }
+
+    /* (3) Enable the patch. */
+#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(5, 1, 0)
+    ret = klp_enable_patch(&amp;patch);
+#else
+    ret = klp_register_patch(&amp;patch);
+    if (!ret) {
+        ret = klp_enable_patch(&amp;patch);
+        if (ret) klp_unregister_patch(&amp;patch);
+    }
+#endif
+    if (ret) {
+        sysfs_remove_group(tcl_kobj, &amp;tcl_group);
+        kobject_put(tcl_kobj);
+        return ret;
+    }
+
+    pr_info("tcp_connect_logger: loaded, logging disabled\n");
+    return 0;
+}
+
+static void __exit tcl_exit(void)
+{
+    sysfs_remove_group(tcl_kobj, &amp;tcl_group);
+    kobject_put(tcl_kobj);
+#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(5, 1, 0)
+    klp_disable_patch(&amp;patch);
+    klp_unregister_patch(&amp;patch);
+#endif
+}</code></pre>
+<p>Two version-conditioned paths:</p>
+<ul>
+<li><strong>5.1+</strong>: <code>klp_enable_patch()</code> does registration + enable atomically.</li>
+</ul>
+<p>  The module cannot run <code>tcl_exit</code> until the patch has been disabled   via sysfs (see "Unloading" below). So <code>tcl_exit</code> only needs to tear   down the sysfs files.</p>
+<ul>
+<li><strong>&lt; 5.1</strong>: separate <code>klp_register_patch</code> + <code>klp_enable_patch</code> calls.</li>
+</ul>
+<p>  The module <em>can</em> run its exit handler while the patch is active, and   must explicitly disable + unregister.</p>
+<h3 id="28-build-load-exercise">2.8 Build, load, exercise</h3>
+<p>A minimal kbuild Makefile (the repo's <code>Makefile</code> already includes <code>tcp-connect-logger.o</code>; this is the standalone equivalent):</p>
+<pre><code>obj-m := tcp-connect-logger.o
+KDIR ?= /lib/modules/$(shell uname -r)/build
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+<p>Build and load:</p>
+<pre><code>$ make
+$ sudo insmod tcp-connect-logger.ko
+$ dmesg | tail -2
+[ 1042.117] livepatch: enabling patch 'tcp_connect_logger'
+[ 1042.119] tcp_connect_logger: loaded, logging disabled</code></pre>
+<p>Verify the patch is live and the transition has finished:</p>
+<pre><code>$ cat /sys/kernel/livepatch/tcp_connect_logger/enabled
+1
+$ cat /sys/kernel/livepatch/tcp_connect_logger/transition
+0
+$ cat /sys/kernel/livepatch/tcp_connect_logger/vmlinux/tcp_v4_connect/patched
+1</code></pre>
+<p>Turn logging on, generate a connection:</p>
+<pre><code>$ echo 1 | sudo tee /sys/kernel/tcp_connect_logger/enabled
+$ curl -s http://example.com &gt;/dev/null
+$ dmesg | tail -1
+[ 1130.045] tcp_connect_logger: pid=8421 comm=curl -&gt; 93.184.216.34:80</code></pre>
+<p>Turn it back off:</p>
+<pre><code>$ echo 0 | sudo tee /sys/kernel/tcp_connect_logger/enabled</code></pre>
+<h3 id="29-unloading">2.9 Unloading</h3>
+<p>This is where livepatch modules differ from ordinary ones. On 5.1+:</p>
+<pre><code># Disable the patch
+$ echo 0 | sudo tee /sys/kernel/livepatch/tcp_connect_logger/enabled
+# Wait for every task to migrate off the old/new function
+$ while [ "$(cat /sys/kernel/livepatch/tcp_connect_logger/transition)" = "1" ]; do
+&gt;   sleep 1
+&gt; done
+# Now the module is unbusy and can be removed
+$ sudo rmmod tcp_connect_logger</code></pre>
+<p>If a task is permanently stuck inside the patched function and the transition never completes, you can force it (taints the kernel):</p>
+<pre><code>$ echo 1 | sudo tee /sys/kernel/livepatch/tcp_connect_logger/force</code></pre>
+<p>On kernels &lt; 5.1, <code>rmmod</code> Just Works — the exit handler disables and unregisters the patch synchronously.</p>
+<hr>
+<h2 id="3-caveats-and-common-pitfalls">3. Caveats and common pitfalls</h2>
+<ul>
+<li><strong>Signature must match exactly.</strong> Livepatch calls your replacement</li>
+</ul>
+<p>  in place of the original. Mismatched return type or argument list   corrupts the stack. If the function changed signature across kernel   versions, your module needs version conditionals.</p>
+<ul>
+<li><strong>Static symbols may have name collisions.</strong> If two functions named</li>
+</ul>
+<p>  <code>foo</code> exist in vmlinux (different translation units), livepatch   refuses to patch them by name alone — you must set   <code>klp_func.sympos = N</code> to pick the Nth occurrence (1-based, as it   appears in <code>/proc/kallsyms</code>).</p>
+<ul>
+<li><strong>Macros are not patchable.</strong> Anything inlined at the call site has</li>
+</ul>
+<p>  no symbol to patch. Check <code>grep ' tcp_v4_connect$' /proc/kallsyms</code>   before relying on the function being patchable; if it's missing,   it was inlined or removed.</p>
+<ul>
+<li><strong>Patching not-yet-loaded modules works.</strong> Set</li>
+</ul>
+<p>  <code>klp_object.name = "foo"</code> for a module that may load later. The   livepatch core records the pending patch and applies it on the next   load of <code>foo</code>. The patch is removed automatically on <code>rmmod foo</code>.</p>
+<ul>
+<li><strong>You can't add fields to existing kernel structs.</strong> Livepatch only</li>
+</ul>
+<p>  redirects code. If a CVE fix adds a new struct field, you have to   approximate around the missing storage (this is why the   <code>ptrace-fix-livepatch.c</code> in this repo applies a stricter check than   upstream — see <a href="README.md#ptrace-exit_mm-dumpability-mitigation"><code>README.md</code></a>).</p>
+<ul>
+<li><strong>Shadow variables exist for the above.</strong> <code>linux/livepatch.h</code> exposes</li>
+</ul>
+<p>  <code>klp_shadow_alloc/get/free</code> — a per-(object,id) keyed hash that   livepatches can use as out-of-band per-instance storage when they   <em>need</em> a new field. It's clunkier than adding a struct member but   doesn't require kernel ABI changes.</p>
+<ul>
+<li><strong>IPMODIFY is single-owner.</strong> Two livepatches cannot patch the same</li>
+</ul>
+<p>  function. Neither can a livepatch and an ftrace IPMODIFY hook   (e.g. the <code>ptrace-fix-ftrace.c</code> and <code>ptrace-fix-livepatch.c</code> in this   repo cannot both be loaded against the same target).</p>
+<ul>
+<li><strong>Hot-path overhead is real but small.</strong> A patched function pays</li>
+</ul>
+<p>  one trampoline (~ftrace overhead) per call. For something called   millions of times per second, profile before deploying.</p>
+<ul>
+<li><strong>Reliable stacktrace requirements.</strong> The per-task consistency model</li>
+</ul>
+<p>  needs the architecture to provide reliable unwinding (frame pointers   via <code>STACK_VALIDATION</code>, or ORC on x86_64 with objtool). On   architectures without reliable stacktraces, the transition may stall   longer.</p>
+<hr>
+<h2 id="4-further-reading">4. Further reading</h2>
+<ul>
+<li><code>Documentation/livepatch/livepatch.rst</code> in the kernel tree — the</li>
+</ul>
+<p>  authoritative reference.</p>
+<ul>
+<li><code>Documentation/livepatch/cumulative-patches.rst</code> — atomic replace</li>
+</ul>
+<p>  mode, used when you want a new patch to fully supersede an older   one in one operation.</p>
+<ul>
+<li><code>Documentation/livepatch/shadow-vars.rst</code> — adding storage without</li>
+</ul>
+<p>  changing struct layout.</p>
+<ul>
+<li><code>samples/livepatch/</code> in the kernel tree — small, runnable examples.</li>
+<li><code>kpatch</code> and <code>klp-build</code> projects — toolchains that generate livepatch</li>
+</ul>
+<p>  modules automatically from a source diff.</p>
+		</article>
+	</div>
+</main>
+
+<footer class="site">
+	<div class="wrap">
+		Zathras &mdash; rendered from <code>LIVEPATCH.md</code>. Zathras is here to help.
+	</div>
+</footer>
+
+<script src="assets/matrix.js"></script>
+</body>
+</html>

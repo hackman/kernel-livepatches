@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zathras // runtime Linux kernel mitigations</title>
+<meta name="description" content="Zathras — a collection of Linux kernel modules for runtime mitigations: livepatching open CVEs, blocking subsystems, and back-porting upstream security fixes without a reboot.">
+<link rel="stylesheet" href="assets/matrix.css">
+</head>
+<body>
+<canvas id="matrix-rain"></canvas>
+
+<header class="site">
+	<div class="wrap">
+		<a class="brand" href="index.html">Zathras<span class="blink">_</span>
+			<span class="sub">// NO ONE LISTENS TO ZATHRAS</span></a>
+		<nav class="main">
+			<a href="index.html" class="active">Overview</a>
+			<a href="modules.html">Modules</a>
+			<a href="livepatch.html">Livepatching Guide</a>
+			<a class="gh" href="https://github.com/hackman/kernel-livepatches" target="_blank" rel="noopener" title="GitHub repository"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+		</nav>
+	</div>
+</header>
+
+<main>
+	<div class="wrap">
+
+		<section class="hero">
+			<h1>Zathras</h1>
+			<p class="tag">Ad-hoc, runtime kernel mitigations for Linux. Disable syscall paths
+			with open CVEs, block subsystems without rebuilding the kernel, or back-port an
+			upstream security fix in place &mdash; no reboot required.</p>
+			<p class="tag" style="color:var(--green-dim);font-style:italic;margin-top:-10px">
+			&ldquo;Zathras fix. Zathras keep the Great Machine running. No one listens to
+			Zathras&hellip; but Zathras patch anyway.&rdquo; - Babylon 5</p>
+			<p class="prompt">insmod cve-2026-99288-livepatch-6.x.ko &nbsp;# patch a live kernel</p>
+			<div class="cta">
+				<a class="btn" href="modules.html">Browse modules &rarr;</a>
+				<a class="btn ghost" href="livepatch.html">How livepatching works</a>
+			</div>
+		</section>
+
+		<hr>
+
+		<h2>What this is</h2>
+		<p>The mitigations ship in two flavours(livepatch and/or ftrace) so you can pick the right trade-off for your kernel configuration:</p>
+
+		<div class="grid">
+			<div class="card">
+				<div class="ico">&#9881;</div>
+				<h3>ftrace flavour</h3>
+				<p>Low-config dynamic <code>ftrace</code> with <code>IPMODIFY</code>. Redirects a
+				function at its fentry site. Works wherever <code>DYNAMIC_FTRACE_WITH_REGS</code>
+				is enabled &mdash; no livepatch infrastructure needed. Useful for older kernels.</p>
+			</div>
+			<div class="card">
+				<div class="ico">&#128273;</div>
+				<h3>livepatch flavour</h3>
+				<p>Rides the kernel's <code>CONFIG_LIVEPATCH</code> consistency model. Cleaner
+				semantics, safe transition, and able to target not-yet-loaded modules. The
+				preferred mechanism on modern distro kernels.</p>
+			</div>
+			<div class="card">
+				<div class="ico">&#128737;</div>
+				<h3>surgical CVE fixes</h3>
+				<p>CVE modules reimplement the exact upstream fix &mdash; the whole target
+				function body, with only the security hunk changed &mdash; so behaviour matches
+				mainline byte-for-byte except for the bug.</p>
+			</div>
+		</div>
+
+		<h2>Highlights</h2>
+		<div class="grid">
+			<a class="card" href="modules.html#cve-2026-99288">
+				<span class="go">&rarr;</span>
+				<h3>CVE-2026-99288</h3>
+				<p>Reject unhashed sockets during TCP/TCPv6 established ehash lookups
+				(lockless <code>SLAB_TYPESAFE_BY_RCU</code> reuse UAF). Builds for 5.x and 6.x,
+				auto-adapts to distro SAUCE prototypes.</p>
+			</a>
+			<a class="card" href="modules.html#cve-2026-98432">
+				<span class="go">&rarr;</span>
+				<h3>CVE-2026-98432</h3>
+				<p>RCU-defer <code>inet_opt</code> / <code>ireq_opt</code> frees so they survive
+				the SYN-retransmit / reqsk-migration window. Variants for Ubuntu 6.8 and
+				Debian 6.12.</p>
+			</a>
+			<a class="card" href="modules.html#cve-2026-53359">
+				<span class="go">&rarr;</span>
+				<h3>CVE-2026-53359</h3>
+				<p>&ldquo;Januscape&rdquo; KVM shadow-paging UAF: missing <code>role.word</code>
+				check in <code>kvm_mmu_get_child_sp</code>. Fix for v6.0+, plus audit hooks for
+				older trees.</p>
+			</a>
+			<a class="card" href="modules.html#cve-2026-23111">
+				<span class="go">&rarr;</span>
+				<h3>CVE-2026-23111</h3>
+				<p>Use-after-free in <code>nft_map_catchall_activate</code>. Livepatch for modern
+				kernels and a pre-5.1-API variant for RHEL 8 / clones.</p>
+			</a>
+		</div>
+
+		<h2>Auto-load on boot</h2>
+		<p>Drop any <code>livepatch=Y</code> module into
+		<code>/lib/modules/$(uname&nbsp;-r)/livepatches</code> and the bundled systemd service
+		applies them on boot &mdash; serialized so each patch's transition completes before the
+		next is enabled (the kernel allows only one livepatch in transition at a time).</p>
+		<pre><code>make install-autoload     # stage .ko + install script + enable service
+make autoload-now         # apply immediately, no reboot</code></pre>
+
+		<div class="note">
+			<strong>Heads up:</strong> these are offensive-security / defensive research tools.
+			They taint the kernel (<code>TAINT_LIVEPATCH</code>), require root, and target
+			specific kernel versions. Read each module's header and test on a matching kernel
+			before production use.
+		</div>
+
+		<h2>Requirements</h2>
+		<ul>
+			<li>x86_64; Linux 4.11+ (each source selects the right API via
+				<code>LINUX_VERSION_CODE</code>).</li>
+			<li>Kernel build tree at <code>/lib/modules/$(uname -r)/build</code>.</li>
+			<li>livepatch modules: <code>CONFIG_LIVEPATCH=y</code>; ftrace modules:
+				<code>CONFIG_DYNAMIC_FTRACE_WITH_REGS=y</code>.</li>
+		</ul>
+
+		<h2>Discuss &amp; contribute</h2>
+		<p>Questions, patch ideas, war stories from long-uptime boxes &mdash; join the
+		conversation on IRC:</p>
+		<p class="prompt">/join #livepatch &nbsp;# on irc.libera.chat</p>
+		<p><a class="btn" href="ircs://irc.libera.chat:6697/livepatch">Connect to
+		<code>#livepatch</code> on Libera.Chat &rarr;</a></p>
+		<p style="color:var(--text-mut);font-size:13px">No IRC client? Use the
+		<a href="https://web.libera.chat/#livepatch" target="_blank" rel="noopener">Libera.Chat
+		web client</a>.</p>
+
+	</div>
+</main>
+
+<footer class="site">
+	<div class="wrap">
+		Zathras &mdash; runtime Linux kernel mitigations &middot;
+		built for long-uptime servers that cannot reboot &middot;
+		<a href="livepatch.html">read the livepatching guide</a>
+	</div>
+</footer>
+
+<script src="assets/matrix.js"></script>
+</body>
+</html>

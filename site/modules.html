@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modules // Zathras</title>
+<meta name="description" content="Every module in kernel-livepatch: CVE fixes, hardening mitigations, generic blockers and examples.">
+<link rel="stylesheet" href="assets/matrix.css">
+</head>
+<body>
+<canvas id="matrix-rain"></canvas>
+
+<header class="site">
+	<div class="wrap">
+		<a class="brand" href="index.html">Zathras<span class="blink">_</span>
+			<span class="sub">// MODULE INDEX</span></a>
+		<nav class="main">
+			<a href="index.html">Overview</a>
+			<a href="modules.html" class="active">Modules</a>
+			<a href="livepatch.html">Livepatching Guide</a>
+			<a class="gh" href="https://github.com/hackman/kernel-livepatches" target="_blank" rel="noopener" title="GitHub repository"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+		</nav>
+	</div>
+</header>
+
+<main>
+	<div class="wrap">
+
+		<section class="hero" style="padding-bottom:6px">
+			<h1 style="font-size:clamp(26px,5vw,42px)">Modules</h1>
+			<p class="tag">Every <code>.ko</code> in the tree. CVE badges link to the GitHub
+			Advisory Database. <span class="badge lp">livepatch</span>
+			<span class="badge ft">ftrace</span>
+			<span class="badge audit">audit&nbsp;only</span>
+			<span class="badge util">utility</span></p>
+		</section>
+
+		<div class="filterbar">
+			<input id="filter" type="text" placeholder="filter modules…  (try: cve, tcp, kvm, 6.x)" autocomplete="off">
+		</div>
+
+		<h2>CVE fixes</h2>
+
+		<div class="module" id="cve-2026-99288" data-k="cve-2026-99288 tcp ipv4 ipv6 ehash lookup uaf livepatch 6.x syncookie">
+			<div class="top">
+				<h3 class="file">cve-2026-99288-livepatch-6.x.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-99288" target="_blank" rel="noopener">CVE-2026-99288</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4e2b3ef19e0e04adca38442f07dd6bc93c712bf1" target="_blank" rel="noopener" title="Linux upstream fix: commit 4e2b3ef19e0e">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+					<span class="badge">6.x</span>
+				</div>
+			</div>
+			<p class="desc">Rejects <em>unhashed</em> sockets in <code>__inet_lookup_established</code> /
+			<code>__inet6_lookup_established</code> after taking a reference, and defers the
+			SYN-cookie reqsk free in <code>tcp_get_cookie_sock</code>. Closes a lockless-ehash
+			<code>SLAB_TYPESAFE_BY_RCU</code> reuse UAF / NULL-deref in <code>tcp_v4_rcv</code>.
+			Auto-adapts to the Ubuntu <code>syn_recv_sock</code> SAUCE prototype. Upstream commit
+			<code>4e2b3ef19e0e</code>.</p>
+		</div>
+
+		<div class="module" id="cve-2026-99288-5x" data-k="cve-2026-99288 tcp ipv4 ipv6 ehash lookup uaf livepatch 5.x inet_match">
+			<div class="top">
+				<h3 class="file">cve-2026-99288-livepatch-5.x.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-99288" target="_blank" rel="noopener">CVE-2026-99288</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4e2b3ef19e0e04adca38442f07dd6bc93c712bf1" target="_blank" rel="noopener" title="Linux upstream fix: commit 4e2b3ef19e0e">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+					<span class="badge">5.x</span>
+				</div>
+			</div>
+			<p class="desc">Same CVE-2026-99288 fix for the 5.x series (5.4 / 5.10 / 5.15 …) using
+			5.x APIs: the <code>INET_MATCH</code>/<code>INET6_MATCH</code> macros, the
+			<code>tsoff</code> argument of <code>tcp_get_cookie_sock</code>, and an open-coded
+			<code>hlist_nulls_unhashed_lockless</code> for older trees.</p>
+		</div>
+
+		<div class="module" id="cve-2026-98432" data-k="cve-2026-98432 ipv4 inet_opt ireq_opt uaf rcu kfree_rcu debian 6.12 livepatch">
+			<div class="top">
+				<h3 class="file">cve-2026-98432-livepatch-6.12.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-98432" target="_blank" rel="noopener">CVE-2026-98432</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e3f33b0a1d89" target="_blank" rel="noopener" title="Linux upstream fix: commit e3f33b0a1d89">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+					<span class="badge">Debian 6.12</span>
+				</div>
+			</div>
+			<p class="desc">Swaps <code>kfree</code> for <code>kfree_rcu</code> in
+			<code>inet_sock_destruct</code> and <code>tcp_v4_reqsk_destructor</code> so
+			<code>inet_opt</code>/<code>ireq_opt</code> survive the SYN-retransmit /
+			reqsk-migration RCU window. Upstream commit <code>e3f33b0a1d89</code>.</p>
+		</div>
+
+		<div class="module" id="cve-2026-98432-68" data-k="cve-2026-98432 ipv4 inet_opt ireq_opt uaf rcu kfree_rcu ubuntu 6.8 livepatch">
+			<div class="top">
+				<h3 class="file">cve-2026-98432-livepatch-6.8.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-98432" target="_blank" rel="noopener">CVE-2026-98432</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e3f33b0a1d89" target="_blank" rel="noopener" title="Linux upstream fix: commit e3f33b0a1d89">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+					<span class="badge">Ubuntu 6.8</span>
+				</div>
+			</div>
+			<p class="desc">The same CVE-2026-98432 fix tuned for Ubuntu 6.8.y. Nearly identical
+			source to the 6.12 variant; both target <code>vmlinux</code>. Pick whichever matches
+			your running kernel.</p>
+		</div>
+
+		<div class="module" id="cve-2026-53359" data-k="cve-2026-53359 januscape kvm mmu shadow paging uaf role.word kvm_mmu_get_child_sp livepatch v6">
+			<div class="top">
+				<h3 class="file">kvm-mmu-role-fix-livepatch.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-53359" target="_blank" rel="noopener">CVE-2026-53359</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=81ccda30b4e83d8f5cc4fd50503c44e3a33abfeb" target="_blank" rel="noopener" title="Linux upstream fix: commit 81ccda30b4e8">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+					<span class="badge">v6.0+</span>
+				</div>
+			</div>
+			<p class="desc">&ldquo;Januscape&rdquo; fix: KVM shadow-paging use-after-free from a
+			missing <code>role.word</code> check in <code>kvm_mmu_get_child_sp</code>. Upstream
+			commit <code>81ccda30b4e8</code> (function introduced by <code>2e65e842c57d</code>).</p>
+		</div>
+
+		<div class="module" data-k="cve-2026-53359 januscape kvm mmu rhel 8 4.18 audit livepatch kvm_mmu_get_page">
+			<div class="top">
+				<h3 class="file">kvm-mmu-role-fix-livepatch-4.18.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-53359" target="_blank" rel="noopener">CVE-2026-53359</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=81ccda30b4e83d8f5cc4fd50503c44e3a33abfeb" target="_blank" rel="noopener" title="Linux upstream fix (v6.0+): commit 81ccda30b4e8">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+					<span class="badge audit">audit only</span>
+					<span class="badge">4.18 / RHEL 8</span>
+				</div>
+			</div>
+			<p class="desc">Pre-5.1-API audit livepatch wrapping <code>kvm_mmu_get_page</code> on
+			RHEL 8 / clones. 4.18 is structurally exposed to the same UAF class, but this module
+			only adds visibility &mdash; it does <strong>not</strong> close the implicit-descent
+			reuse path. See the file header before relying on it.</p>
+		</div>
+
+		<div class="module" data-k="cve-2026-53359 januscape kvm mmu 3.10 audit ftrace kvm_mmu_get_page">
+			<div class="top">
+				<h3 class="file">kvm-mmu-role-fix-ftrace-3.10.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-53359" target="_blank" rel="noopener">CVE-2026-53359</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=81ccda30b4e83d8f5cc4fd50503c44e3a33abfeb" target="_blank" rel="noopener" title="Linux upstream fix (v6.0+): commit 81ccda30b4e8">patch&nbsp;&#8599;</a>
+					<span class="badge ft">ftrace</span>
+					<span class="badge audit">audit only</span>
+					<span class="badge">3.10</span>
+				</div>
+			</div>
+			<p class="desc">Defence-in-depth ftrace audit hook on 3.10's
+			<code>kvm_mmu_get_page</code>. Same caveat as the 4.18 module: catches allocation
+			duplicates but not the implicit-descent reuse in <code>FNAME(fetch)</code>.</p>
+		</div>
+
+		<div class="module" id="cve-2026-23111" data-k="cve-2026-23111 netfilter nft nftables catchall map activate uaf livepatch">
+			<div class="top">
+				<h3 class="file">nft-catchall-fix-livepatch.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-23111" target="_blank" rel="noopener">CVE-2026-23111</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f41c5d151078c5348271ffaf8e7410d96f2d82f8" target="_blank" rel="noopener" title="Linux upstream fix: commit f41c5d151078">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+				</div>
+			</div>
+			<p class="desc">Fixes a use-after-free in <code>nft_map_catchall_activate</code> in the
+			netfilter nftables subsystem. Livepatch for modern kernels, validated with the
+			included PoC test scripts.</p>
+		</div>
+
+		<div class="module" data-k="cve-2026-23111 netfilter nft nftables catchall rhel 8 4.18 livepatch pre-5.1">
+			<div class="top">
+				<h3 class="file">nft-catchall-fix-livepatch-4.18.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-23111" target="_blank" rel="noopener">CVE-2026-23111</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f41c5d151078c5348271ffaf8e7410d96f2d82f8" target="_blank" rel="noopener" title="Linux upstream fix: commit f41c5d151078">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+					<span class="badge">4.18 / RHEL 8</span>
+				</div>
+			</div>
+			<p class="desc">The CVE-2026-23111 fix built against the pre-5.1 livepatch API for
+			RHEL 8 and its clones; <code>rmmod</code> cleans up with no sysfs dance.</p>
+		</div>
+
+		<div class="module" id="cve-2026-46242" data-k="cve-2026-46242 badepoll epoll ep_remove uaf livepatch">
+			<div class="top">
+				<h3 class="file">badepoll-livepatch.c</h3>
+				<div class="meta">
+					<a class="badge cve" href="https://github.com/advisories?query=CVE-2026-46242" target="_blank" rel="noopener">CVE-2026-46242</a>
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=a6dc643c69311677c574a0f17a3f4d66a5f3744b" target="_blank" rel="noopener" title="Linux upstream fix: commit a6dc643c6931">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+				</div>
+			</div>
+			<p class="desc">&ldquo;BadEpoll&rdquo; fix: use-after-free in the epoll
+			<code>ep_remove()</code> path. See <code>badepoll-livepatch-example.c</code> for a
+			minimal annotated companion.</p>
+		</div>
+
+		<h2>Hardening &amp; mitigations</h2>
+
+		<div class="module" data-k="ptrace exit_mm dumpable mitigation ssh-keysign livepatch 31e62c2ebbfd">
+			<div class="top">
+				<h3 class="file">ptrace-fix-livepatch.c</h3>
+				<div class="meta">
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=31e62c2ebbfd" target="_blank" rel="noopener" title="Linux upstream commit 31e62c2ebbfd">patch&nbsp;&#8599;</a>
+					<span class="badge lp">livepatch</span>
+				</div>
+			</div>
+			<p class="desc">Mitigates the ptrace-after-<code>exit_mm()</code> dumpability bypass
+			(the &ldquo;ssh-keysign&rdquo; chain, upstream commit <code>31e62c2ebbfd</code>). When
+			<code>task-&gt;mm</code> is NULL it requires <code>CAP_SYS_PTRACE</code> in the init
+			namespace instead of silently skipping the dumpable gate.</p>
+		</div>
+
+		<div class="module" data-k="ptrace exit_mm dumpable mitigation ftrace 31e62c2ebbfd ipmodify">
+			<div class="top">
+				<h3 class="file">ptrace-fix-ftrace.c</h3>
+				<div class="meta">
+					<a class="badge patch" href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=31e62c2ebbfd" target="_blank" rel="noopener" title="Linux upstream commit 31e62c2ebbfd">patch&nbsp;&#8599;</a>
+					<span class="badge ft">ftrace</span>
+				</div>
+			</div>
+			<p class="desc">The same ptrace <code>exit_mm()</code> mitigation implemented with
+			dynamic ftrace + <code>IPMODIFY</code> for kernels without livepatch infrastructure.</p>
+		</div>
+
+		<h2>Generic tools &amp; examples</h2>
+
+		<div class="module" data-k="generic blocker block functions eperm ftrace ipmodify configurable">
+			<div class="top">
+				<h3 class="file">block-functions.c</h3>
+				<div class="meta">
+					<span class="badge ft">ftrace</span>
+					<span class="badge util">utility</span>
+				</div>
+			</div>
+			<p class="desc">Generic blocker: replaces a configurable list of functions with an
+			<code>-EPERM</code> stub via dynamic ftrace + <code>IPMODIFY</code>. Edit
+			<code>blocklist[]</code> at the top of the file.</p>
+		</div>
+
+		<div class="module" data-k="generic blocker filter eperm livepatch configurable">
+			<div class="top">
+				<h3 class="file">livepatch-filter.c</h3>
+				<div class="meta">
+					<span class="badge lp">livepatch</span>
+					<span class="badge util">utility</span>
+				</div>
+			</div>
+			<p class="desc">Same generic <code>-EPERM</code> blocker as
+			<code>block-functions.c</code>, implemented via livepatching. Edit
+			<code>blocklist[]</code> to choose the functions to neutralise.</p>
+		</div>
+
+		<div class="module" data-k="stealth livepatch ftrace redirect no sysfs hidden">
+			<div class="top">
+				<h3 class="file">stealth-livepatch.c</h3>
+				<div class="meta">
+					<span class="badge ft">ftrace</span>
+					<span class="badge util">utility</span>
+				</div>
+			</div>
+			<p class="desc">An ftrace redirect that registers <em>no</em> entry under
+			<code>/sys/kernel/livepatch/</code> &mdash; unload is a plain <code>rmmod</code>.
+			Useful when you don't want the patch to advertise itself.</p>
+		</div>
+
+		<div class="module" data-k="tcp connect logger tutorial tcp_v4_connect example livepatch">
+			<div class="top">
+				<h3 class="file">tcp-connect-logger.c</h3>
+				<div class="meta">
+					<span class="badge lp">livepatch</span>
+					<span class="badge util">example</span>
+				</div>
+			</div>
+			<p class="desc">The worked example from the
+			<a href="livepatch.html">livepatching guide</a>: wraps
+			<code>tcp_v4_connect()</code> with a sysfs-toggled connection logger.</p>
+		</div>
+
+		<div class="module" data-k="udp send logger udp_sendmsg example livepatch outgoing">
+			<div class="top">
+				<h3 class="file">udp-send-logger.c</h3>
+				<div class="meta">
+					<span class="badge lp">livepatch</span>
+					<span class="badge util">example</span>
+				</div>
+			</div>
+			<p class="desc">Sister module to the TCP logger: logs outgoing UDP/IPv4 datagrams by
+			livepatching <code>udp_sendmsg</code>.</p>
+		</div>
+
+		<p id="noresults" style="display:none;color:var(--text-mut)">// no modules match that filter</p>
+
+	</div>
+</main>
+
+<footer class="site">
+	<div class="wrap">
+		Zathras &mdash; CVE badges resolve against the
+		<a href="https://github.com/advisories" target="_blank" rel="noopener">GitHub Advisory Database</a>.
+	</div>
+</footer>
+
+<script src="assets/matrix.js"></script>
+<script>
+(function () {
+	var input = document.getElementById("filter");
+	var mods = Array.prototype.slice.call(document.querySelectorAll(".module"));
+	var heads = Array.prototype.slice.call(document.querySelectorAll("main h2"));
+	var nores = document.getElementById("noresults");
+	function apply() {
+		var q = input.value.trim().toLowerCase();
+		var shown = 0;
+		mods.forEach(function (m) {
+			var hay = (m.getAttribute("data-k") + " " + m.textContent).toLowerCase();
+			var ok = !q || hay.indexOf(q) !== -1;
+			m.style.display = ok ? "" : "none";
+			if (ok) shown++;
+		});
+		// hide section headers with no visible modules
+		heads.forEach(function (h) {
+			var n = h.nextElementSibling, any = false;
+			while (n && n.classList && n.classList.contains("module")) {
+				if (n.style.display !== "none") any = true;
+				n = n.nextElementSibling;
+			}
+			h.style.display = any ? "" : "none";
+		});
+		nores.style.display = shown ? "none" : "";
+	}
+	input.addEventListener("input", apply);
+})();
+</script>
+</body>
+</html>
